@@ -1,1 +1,1 @@
-# Amelia_INFO5731_Spring2020
+# Repository for code from the Low Resource NLP research project
