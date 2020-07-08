@@ -1,7 +1,7 @@
 import random
 from sys import stdin
 
-#create mixed training data from a source and target file, with a percentage value to determine how much of the data is from the source file
+#create mixed training data from a list of source files and a list of target files, with a list containin the percentage of each file that is to go into the output file
 def pseudo_bilingual(source, target, perc):
     dest = open("new_data.trn", "w")
     counter = 0
