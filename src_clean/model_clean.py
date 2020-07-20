@@ -19,6 +19,94 @@ class Identity(nn.Module):
     def forward(self, x):
         return x
 
+class StackedLSTM(nn.Module):
+    '''
+    step-by-step stacked LSTM
+    '''
+
+    def __init__(self, input_siz, rnn_siz, nb_layers, dropout):
+        '''
+        init
+        '''
+        super().__init__()
+        self.nb_layers = nb_layers
+        self.rnn_siz = rnn_siz
+        self.layers = nn.ModuleList()
+        self.dropout = nn.Dropout(dropout)
+
+        for _ in range(nb_layers):
+            self.layers.append(nn.LSTMCell(input_siz, rnn_siz))
+            input_siz = rnn_siz
+
+    def get_init_hx(self, batch_size):
+        '''
+        initial h0
+        '''
+        h_0_s, c_0_s = [], []
+        for _ in range(self.nb_layers):
+            h_0 = torch.zeros((batch_size, self.rnn_siz), device=DEVICE)
+            c_0 = torch.zeros((batch_size, self.rnn_siz), device=DEVICE)
+            h_0_s.append(h_0)
+            c_0_s.append(c_0)
+        return (h_0_s, c_0_s)
+
+    def forward(self, input, hidden):
+        '''
+        dropout after all output except the last one
+        '''
+        h_0, c_0 = hidden
+        h_1, c_1 = [], []
+        for i, layer in enumerate(self.layers):
+            h_1_i, c_1_i = layer(input, (h_0[i], c_0[i]))
+            input = self.dropout(h_1_i)
+            h_1 += [h_1_i]
+            c_1 += [c_1_i]
+
+        h_1 = torch.stack(h_1)
+        c_1 = torch.stack(c_1)
+
+        return input, (h_1, c_1)
+
+
+class Attention(nn.Module):
+    '''
+    attention with mask
+    '''
+
+    def forward(self, ht, hs, mask, weighted_ctx=True):
+        '''
+        ht: batch x ht_dim
+        hs: (seq_len x batch x hs_dim, seq_len x batch x ht_dim)
+        mask: seq_len x batch
+        '''
+        hs, hs_ = hs
+        # seq_len, batch, _ = hs.size()
+        hs = hs.transpose(0, 1)
+        hs_ = hs_.transpose(0, 1)
+        # hs: batch x seq_len x hs_dim
+        # hs_: batch x seq_len x ht_dim
+        # hs_ = self.hs2ht(hs)
+        # Alignment/Attention Function
+        # batch x ht_dim x 1
+        ht = ht.unsqueeze(2)
+        # batch x seq_len
+        score = torch.bmm(hs_, ht).squeeze(2)
+        # attn = F.softmax(score, dim=-1)
+        attn = F.softmax(score, dim=-1) * mask.transpose(0, 1) + EPSILON
+        attn = attn / attn.sum(-1, keepdim=True)
+
+        # Compute weighted sum of hs by attention.
+        # batch x 1 x seq_len
+        attn = attn.unsqueeze(1)
+        if weighted_ctx:
+            # batch x hs_dim
+            weight_hs = torch.bmm(attn, hs).squeeze(1)
+        else:
+            weight_hs = None
+
+        return weight_hs, attn
+
+
 class Transducer(nn.Module):
     '''
     seq2seq with soft attention baseline
